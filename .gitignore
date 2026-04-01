@@ -8,3 +8,9 @@ coverage
 .vscode
 *.suo
 *.lock
+.gitignore
+*.code-workspace
+doc-prompt-eng.md
+claude.bat
+.claude
+chn_prompt_plan.md
