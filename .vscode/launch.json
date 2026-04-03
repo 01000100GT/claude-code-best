@@ -4,8 +4,9 @@
         {
             "type": "bun",
             "request": "attach",
-            "name": "Attach to Bun (TUI debug)",
+            "name": "Attach to Claude Code",
             "url": "ws://localhost:8888/2dc3gzl5xot",
+            "preLaunchTask": "Start Claude Code TUI",
             "stopOnEntry": false,
             "internalConsoleOptions": "neverOpen"
         }

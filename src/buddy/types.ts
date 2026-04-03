@@ -124,6 +124,7 @@ export type Companion = CompanionBones &
 // can't edit their way to a legendary.
 export type StoredCompanion = CompanionSoul & { hatchedAt: number }
 
+// ssj 设置 rarity 权重为 60:25:10:4:1, 修改这里的权重可以改变 rarity 分分布率;legendary: 100, 其他改为0就能获取传说级
 export const RARITY_WEIGHTS = {
   common: 60,
   uncommon: 25,
