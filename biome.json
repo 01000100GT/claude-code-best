@@ -6,7 +6,11 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**", "!!**/dist", "!!**/packages/@ant"]
+		"includes": [
+			"**",
+			"!!**/dist",
+			"!!**/packages/@ant"
+		]
 	},
 	"formatter": {
 		"enabled": true,
@@ -28,7 +32,7 @@
 				"noFallthroughSwitchClause": "off",
 				"noShadowRestrictedNames": "off",
 				"noArrayIndexKey": "off",
-				"noConsole": "off",
+				"noConsole": "error",
 				"noConfusingLabels": "off",
 				"useIterableCallbackReturn": "off"
 			},
@@ -60,7 +64,7 @@
 			"correctness": {
 				"noUnusedVariables": "off",
 				"noUnusedImports": "off",
-				"useExhaustiveDependencies": "off",
+				"useExhaustiveDependencies": "error",
 				"noSwitchDeclarations": "off",
 				"noUnreachable": "off",
 				"useHookAtTopLevel": "off",
@@ -91,7 +95,9 @@
 	},
 	"overrides": [
 		{
-			"includes": ["**/*.tsx"],
+			"includes": [
+				"**/*.tsx"
+			],
 			"javascript": {
 				"formatter": {
 					"semicolons": "always"
@@ -102,7 +108,13 @@
 			}
 		},
 		{
-			"includes": ["scripts/**", "packages/**", "**/*.js", "**/*.mjs", "**/*.jsx"],
+			"includes": [
+				"scripts/**",
+				"packages/**",
+				"**/*.js",
+				"**/*.mjs",
+				"**/*.jsx"
+			],
 			"formatter": {
 				"enabled": false
 			}
