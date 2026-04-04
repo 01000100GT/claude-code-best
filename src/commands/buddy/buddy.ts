@@ -67,6 +67,40 @@ function speciesLabel(species: string): string {
   return species.charAt(0).toUpperCase() + species.slice(1)
 }
 
+function buildStoredCompanion(seed: string): {
+  stored: StoredCompanion
+  rarity: string
+  species: string
+  personality: string
+  sprite: string[]
+  shiny: boolean
+} {
+  const r = rollWithSeed(seed)
+  const name = SPECIES_NAMES[r.bones.species] ?? 'Buddy'
+  const personality =
+    SPECIES_PERSONALITY[r.bones.species] ?? 'Mysterious and code-savvy.'
+
+  const stored: StoredCompanion = {
+    name,
+    personality,
+    seed,
+    hatchedAt: Date.now(),
+  }
+
+  return {
+    stored,
+    rarity: r.bones.rarity,
+    species: r.bones.species,
+    personality,
+    sprite: renderSprite(r.bones, 0),
+    shiny: r.bones.shiny,
+  }
+}
+
+function buddyCommandList(): string {
+  return '/buddy pet  /buddy mute  /buddy unmute  /buddy hatch  /buddy rehatch'
+}
+
 export async function call(
   onDone: LocalJSXCommandOnDone,
   context: ToolUseContext & LocalJSXCommandContext,
@@ -75,21 +109,18 @@ export async function call(
   const sub = args?.trim().toLowerCase() ?? ''
   const setState = context.setAppState
 
-  // ── /buddy off — mute companion ──
-  if (sub === 'off') {
+  if (sub === 'off' || sub === 'mute') {
     saveGlobalConfig(cfg => ({ ...cfg, companionMuted: true }))
     onDone('companion muted', { display: 'system' })
     return null
   }
 
-  // ── /buddy on — unmute companion ──
-  if (sub === 'on') {
+  if (sub === 'on' || sub === 'unmute') {
     saveGlobalConfig(cfg => ({ ...cfg, companionMuted: false }))
     onDone('companion unmuted', { display: 'system' })
     return null
   }
 
-  // ── /buddy pet — trigger heart animation + auto unmute ──
   if (sub === 'pet') {
     const companion = getCompanion()
     if (!companion) {
@@ -114,10 +145,73 @@ export async function call(
     return null
   }
 
-  // ── /buddy (no args) — show existing or hatch ──
   const companion = getCompanion()
 
-  // Auto-unmute when viewing
+  if (sub === 'hatch') {
+    if (companion) {
+      onDone(
+        'you already have a companion · run /buddy to see it\nTip: /buddy rehatch will replace it',
+        { display: 'system' },
+      )
+      return null
+    }
+
+    const seed = generateSeed()
+    const nextCompanion = buildStoredCompanion(seed)
+
+    saveGlobalConfig(cfg => ({ ...cfg, companion: nextCompanion.stored }))
+
+    const stars = RARITY_STARS[nextCompanion.rarity]
+    const shiny = nextCompanion.shiny ? ' ✨ Shiny!' : ''
+    const lines = [
+      'A wild companion appeared!',
+      '',
+      ...nextCompanion.sprite,
+      '',
+      `${nextCompanion.stored.name} the ${speciesLabel(nextCompanion.species)}${shiny}`,
+      `Rarity: ${stars} (${nextCompanion.rarity})`,
+      `"${nextCompanion.personality}"`,
+      '',
+      'Your companion will now appear beside your input box!',
+      buddyCommandList(),
+    ]
+    onDone(lines.join('\n'), { display: 'system' })
+    return null
+  }
+
+  if (sub === 'rehatch') {
+    const seed = generateSeed()
+    const nextCompanion = buildStoredCompanion(seed)
+
+    saveGlobalConfig(cfg => ({ ...cfg, companion: nextCompanion.stored }))
+
+    const stars = RARITY_STARS[nextCompanion.rarity]
+    const shiny = nextCompanion.shiny ? ' ✨ Shiny!' : ''
+    const lines = [
+      companion ? 'A new companion appeared!' : 'A wild companion appeared!',
+      '',
+      ...nextCompanion.sprite,
+      '',
+      `${nextCompanion.stored.name} the ${speciesLabel(nextCompanion.species)}${shiny}`,
+      `Rarity: ${stars} (${nextCompanion.rarity})`,
+      `"${nextCompanion.personality}"`,
+      '',
+      companion
+        ? 'Your old companion has been replaced!'
+        : 'Your companion will now appear beside your input box!',
+      buddyCommandList(),
+    ]
+    onDone(lines.join('\n'), { display: 'system' })
+    return null
+  }
+
+  if (sub !== '') {
+    onDone(`unknown command: /buddy ${sub}\n${buddyCommandList()}`, {
+      display: 'system',
+    })
+    return null
+  }
+
   if (companion && getGlobalConfig().companionMuted) {
     saveGlobalConfig(cfg => ({ ...cfg, companionMuted: false }))
   }
@@ -132,37 +226,25 @@ export async function call(
     })
   }
 
-  // ── No companion → hatch ──
   const seed = generateSeed()
-  const r = rollWithSeed(seed)
-  const name = SPECIES_NAMES[r.bones.species] ?? 'Buddy'
-  const personality =
-    SPECIES_PERSONALITY[r.bones.species] ?? 'Mysterious and code-savvy.'
+  const nextCompanion = buildStoredCompanion(seed)
 
-  const stored: StoredCompanion = {
-    name,
-    personality,
-    seed,
-    hatchedAt: Date.now(),
-  }
+  saveGlobalConfig(cfg => ({ ...cfg, companion: nextCompanion.stored }))
 
-  saveGlobalConfig(cfg => ({ ...cfg, companion: stored }))
-
-  const stars = RARITY_STARS[r.bones.rarity]
-  const sprite = renderSprite(r.bones, 0)
-  const shiny = r.bones.shiny ? ' \u2728 Shiny!' : ''
+  const stars = RARITY_STARS[nextCompanion.rarity]
+  const shiny = nextCompanion.shiny ? ' ✨ Shiny!' : ''
 
   const lines = [
     'A wild companion appeared!',
     '',
-    ...sprite,
+    ...nextCompanion.sprite,
     '',
-    `${name} the ${speciesLabel(r.bones.species)}${shiny}`,
-    `Rarity: ${stars} (${r.bones.rarity})`,
-    `"${personality}"`,
+    `${nextCompanion.stored.name} the ${speciesLabel(nextCompanion.species)}${shiny}`,
+    `Rarity: ${stars} (${nextCompanion.rarity})`,
+    `"${nextCompanion.personality}"`,
     '',
     'Your companion will now appear beside your input box!',
-    'Say its name to get its take \u00b7 /buddy pet \u00b7 /buddy off',
+    buddyCommandList(),
   ]
   onDone(lines.join('\n'), { display: 'system' })
   return null
