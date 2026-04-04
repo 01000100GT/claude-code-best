@@ -10,12 +10,19 @@ import type { AppState } from '../state/AppStateStore.js';
 import { getGlobalConfig } from '../utils/config.js';
 import { isFullscreenActive } from '../utils/fullscreen.js';
 import type { Theme } from '../utils/theme.js';
+import {
+  advanceFloatingBubbleState,
+  createFloatingBubbleState,
+  FLOATING_BUBBLE_FADE_WINDOW_TICKS,
+  FLOATING_BUBBLE_SHOW_TICKS,
+  type FloatingBubbleState,
+  isFloatingBubbleFading,
+  syncFloatingBubbleState,
+} from './CompanionFloatingBubbleState.js';
 import { getCompanion } from './companion.js';
 import { renderFace, renderSprite, spriteFrameCount } from './sprites.js';
 import { RARITY_COLORS } from './types.js';
 const TICK_MS = 500;
-const BUBBLE_SHOW = 20; // ticks → ~10s at 500ms
-const FADE_WINDOW = 6; // last ~3s the bubble dims so you know it's about to go
 const PET_BURST_MS = 2500; // how long hearts float after /buddy pet
 
 // Idle sequence: mostly rest (frame 0), occasional fidget (frames 1-2), rare blink.
@@ -153,7 +160,7 @@ export function CompanionSprite(): React.ReactNode {
                 companionReaction: undefined,
               },
         ),
-      BUBBLE_SHOW * TICK_MS,
+      FLOATING_BUBBLE_SHOW_TICKS * TICK_MS,
       setAppState,
     );
     return () => clearTimeout(timer);
@@ -164,7 +171,10 @@ export function CompanionSprite(): React.ReactNode {
   const color = RARITY_COLORS[companion.rarity];
   const colWidth = spriteColWidth(stringWidth(companion.name));
   const bubbleAge = reaction ? tick - lastSpokeTick.current : 0;
-  const fading = reaction !== undefined && bubbleAge >= BUBBLE_SHOW - FADE_WINDOW;
+  const fading =
+    reaction !== undefined &&
+    bubbleAge >=
+      FLOATING_BUBBLE_SHOW_TICKS - FLOATING_BUBBLE_FADE_WINDOW_TICKS;
   const petAge = petAt ? tick - petStartTick : Infinity;
   const petting = petAge * TICK_MS < PET_BURST_MS;
 
@@ -257,16 +267,11 @@ export function CompanionSprite(): React.ReactNode {
 export function CompanionFloatingBubble() {
   const reaction = useAppState(s => s.companionReaction);
 
-  const [state, setTick] = useState({
-    tick: 0,
-    forReaction: reaction,
-  });
+  const [state, setTick] = useState(() => createFloatingBubbleState(reaction));
 
-  if (reaction !== state.forReaction) {
-    setTick({
-      tick: 0,
-      forReaction: reaction,
-    });
+  const syncedState = syncFloatingBubbleState(state, reaction);
+  if (syncedState !== state) {
+    setTick(syncedState);
   }
 
   useEffect(() => {
@@ -274,10 +279,7 @@ export function CompanionFloatingBubble() {
       return;
     }
     const timer = setInterval(() => {
-      setTick(s => ({
-        ...s,
-        tick: s.tick + 1,
-      }));
+      setTick((s: FloatingBubbleState) => advanceFloatingBubbleState(s));
     }, TICK_MS);
     return () => clearInterval(timer);
   }, [reaction]);
@@ -291,7 +293,38 @@ export function CompanionFloatingBubble() {
     return null;
   }
 
-  const isFading = state.tick >= BUBBLE_SHOW - FADE_WINDOW;
+  return (
+    <CompanionFloatingBubbleContent
+      reaction={reaction}
+      rarity={companion.rarity}
+      tick={state.tick}
+    />
+  );
+}
 
-  return <SpeechBubble text={reaction} color={RARITY_COLORS[companion.rarity]} fading={isFading} tail="down" />;
+type CompanionFloatingBubbleContentProps = {
+  reaction: string;
+  rarity: keyof typeof RARITY_COLORS;
+  tick: number;
+};
+
+/**
+ * Renders the fullscreen companion speech bubble UI once the container logic
+ * has already resolved gating, reaction text, rarity color, and tick state.
+ */
+export function CompanionFloatingBubbleContent({
+  reaction,
+  rarity,
+  tick,
+}: CompanionFloatingBubbleContentProps) {
+  const isFading = isFloatingBubbleFading(tick);
+
+  return (
+    <SpeechBubble
+      text={reaction}
+      color={RARITY_COLORS[rarity]}
+      fading={isFading}
+      tail="down"
+    />
+  );
 }
