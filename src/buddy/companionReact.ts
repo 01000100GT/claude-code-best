@@ -45,18 +45,31 @@ export function triggerCompanionReaction(
   const addressed = isAddressed(messages, companion.name)
 
   const now = Date.now()
-  if (!addressed && now - lastReactTime < MIN_INTERVAL_MS) return
-
   const transcript = buildTranscript(messages)
-  if (!transcript.trim()) return
+
+  if (
+    !shouldTriggerCompanionReaction({
+      hasCompanion: true,
+      muted: false,
+      addressed,
+      now,
+      lastReactTime,
+      transcript,
+    })
+  ) {
+    return
+  }
 
   lastReactTime = now
 
   void callBuddyReactAPI(companion, transcript, addressed)
     .then(reaction => {
       if (!reaction) return
-      recentReactions.push(reaction)
-      if (recentReactions.length > MAX_RECENT) recentReactions.shift()
+      const nextRecentReactions = appendRecentReaction(
+        recentReactions,
+        reaction,
+      )
+      recentReactions.splice(0, recentReactions.length, ...nextRecentReactions)
       setReaction(reaction)
     })
     .catch(() => {})
@@ -64,7 +77,7 @@ export function triggerCompanionReaction(
 
 // ─── Helpers ────────────────────────────────────────
 
-function isAddressed(messages: Message[], name: string): boolean {
+export function isAddressed(messages: Message[], name: string): boolean {
   const pattern = new RegExp(`\\b${escapeRegex(name)}\\b`, 'i')
   for (
     let i = messages.length - 1;
@@ -79,11 +92,11 @@ function isAddressed(messages: Message[], name: string): boolean {
   return false
 }
 
-function escapeRegex(s: string): string {
+export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function buildTranscript(messages: Message[]): string {
+export function buildTranscript(messages: Message[]): string {
   return messages
     .slice(-12)
     .filter(m => m.type === 'user' || m.type === 'assistant')
@@ -104,6 +117,59 @@ function buildTranscript(messages: Message[]): string {
     })
     .join('\n')
     .slice(0, 5000)
+}
+
+export function shouldTriggerCompanionReaction(args: {
+  hasCompanion: boolean
+  muted: boolean
+  addressed: boolean
+  now: number
+  lastReactTime: number
+  transcript: string
+}): boolean {
+  if (!args.hasCompanion || args.muted) return false
+  if (!args.transcript.trim()) return false
+  if (!args.addressed && args.now - args.lastReactTime < MIN_INTERVAL_MS) {
+    return false
+  }
+  return true
+}
+
+export function appendRecentReaction(
+  reactions: string[],
+  reaction: string,
+  maxRecent: number = MAX_RECENT,
+): string[] {
+  const nextReactions = [...reactions, reaction]
+  if (nextReactions.length <= maxRecent) {
+    return nextReactions
+  }
+  return nextReactions.slice(nextReactions.length - maxRecent)
+}
+
+export function createBuddyReactRequestBody(
+  companion: {
+    name: string
+    personality: string
+    species: string
+    rarity: string
+    stats: Record<string, number>
+  },
+  transcript: string,
+  addressed: boolean,
+  reactions: string[],
+) {
+  return {
+    name: companion.name.slice(0, 32),
+    personality: companion.personality.slice(0, 200),
+    species: companion.species,
+    rarity: companion.rarity,
+    stats: companion.stats,
+    transcript,
+    reason: addressed ? 'addressed' : 'turn',
+    recent: reactions.map(r => r.slice(0, 200)),
+    addressed,
+  }
 }
 
 // ─── API call ───────────────────────────────────────
@@ -135,17 +201,14 @@ async function callBuddyReactAPI(
       'Content-Type': 'application/json',
       'User-Agent': getUserAgent(),
     },
-    body: JSON.stringify({
-      name: companion.name.slice(0, 32),
-      personality: companion.personality.slice(0, 200),
-      species: companion.species,
-      rarity: companion.rarity,
-      stats: companion.stats,
-      transcript,
-      reason: addressed ? 'addressed' : 'turn',
-      recent: recentReactions.map(r => r.slice(0, 200)),
-      addressed,
-    }),
+    body: JSON.stringify(
+      createBuddyReactRequestBody(
+        companion,
+        transcript,
+        addressed,
+        recentReactions,
+      ),
+    ),
     signal: AbortSignal.timeout(10_000),
   })
 
@@ -157,4 +220,9 @@ async function callBuddyReactAPI(
   } catch {
     return null
   }
+}
+
+export function _resetCompanionReactStateForTesting(): void {
+  lastReactTime = 0
+  recentReactions.splice(0, recentReactions.length)
 }

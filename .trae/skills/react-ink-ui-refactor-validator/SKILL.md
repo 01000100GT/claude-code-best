@@ -1,6 +1,6 @@
 ---
-name: "react-ink-ui-refactor-validator"
-description: "Refactors React/Ink UI components safely and adds behavior-preserving tests. Invoke when updating feature-gated UI, removing generated artifacts, or validating UI/state equivalence."
+name: react-ink-ui-refactor-validator
+description: Refactors React/Ink UI components safely and adds behavior-preserving tests. Invoke when updating feature-gated UI, removing generated artifacts, or validating UI/state equivalence.
 ---
 
 # React/Ink UI Refactor Validator

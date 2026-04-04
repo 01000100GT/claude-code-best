@@ -12,25 +12,40 @@ A small ${species} named ${name} sits beside the user's input box and occasional
 When the user addresses ${name} directly (by name), its bubble will answer. Your job in that moment is to stay out of the way: respond in ONE line or less, or just answer any part of the message meant for you. Don't explain that you're not ${name} — they know. Don't narrate what ${name} might say — the bubble handles that.`
 }
 
-export function getCompanionIntroAttachment(
-  messages: Message[] | undefined,
-): Attachment[] {
-  if (!feature('BUDDY')) return []
-  const companion = getCompanion()
-  if (!companion || getGlobalConfig().companionMuted) return []
+export function buildCompanionIntroAttachment(args: {
+  companion:
+    | {
+        name: string
+        species: string
+      }
+    | undefined
+  muted: boolean
+  messages: Message[] | undefined
+}): Attachment[] {
+  if (!args.companion || args.muted) return []
 
-  // Skip if already announced for this companion.
-  for (const msg of messages ?? []) {
+  for (const msg of args.messages ?? []) {
     if (msg.type !== 'attachment') continue
     if (msg.attachment.type !== 'companion_intro') continue
-    if (msg.attachment.name === companion.name) return []
+    if (msg.attachment.name === args.companion.name) return []
   }
 
   return [
     {
       type: 'companion_intro',
-      name: companion.name,
-      species: companion.species,
+      name: args.companion.name,
+      species: args.companion.species,
     },
   ]
+}
+
+export function getCompanionIntroAttachment(
+  messages: Message[] | undefined,
+): Attachment[] {
+  if (!feature('BUDDY')) return []
+  return buildCompanionIntroAttachment({
+    companion: getCompanion(),
+    muted: getGlobalConfig().companionMuted,
+    messages,
+  })
 }

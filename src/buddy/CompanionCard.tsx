@@ -2,7 +2,6 @@
  * Companion display card — shown by /buddy (no args).
  * Mirrors official vc8 component: bordered box with sprite, stats, last reaction.
  */
-import React from 'react';
 import { Box, Text } from '../ink.js';
 import { useInput } from '../ink.js';
 import { renderSprite } from './sprites.js';
@@ -11,15 +10,21 @@ import { RARITY_COLORS, RARITY_STARS, STAT_NAMES, type Companion } from './types
 const CARD_WIDTH = 40;
 const CARD_PADDING_X = 2;
 
-function StatBar({ name, value }: { name: string; value: number }) {
+export function formatCompanionCardStatBar(name: string, value: number): string {
   const clamped = Math.max(0, Math.min(100, value));
   const filled = Math.round(clamped / 10);
   const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
-  return (
-    <Text>
-      {name.padEnd(10)} {bar} {String(value).padStart(3)}
-    </Text>
-  );
+  return `${name.padEnd(10)} ${bar} ${String(value).padStart(3)}`;
+}
+
+export function isCompanionCardDismissActive(
+  onDone?: (result?: string, options?: { display?: string }) => void,
+): boolean {
+  return onDone !== undefined;
+}
+
+function StatBar({ name, value }: { name: string; value: number }) {
+  return <Text>{formatCompanionCardStatBar(name, value)}</Text>;
 }
 
 export function CompanionCard({
@@ -40,7 +45,7 @@ export function CompanionCard({
     () => {
       onDone?.(undefined, { display: 'skip' });
     },
-    { isActive: onDone !== undefined },
+    { isActive: isCompanionCardDismissActive(onDone) },
   );
 
   return (

@@ -108,6 +108,63 @@ function spriteColWidth(nameWidth: number): number {
   return Math.max(SPRITE_BODY_WIDTH, nameWidth + NAME_ROW_PAD);
 }
 
+export function canRenderCompanionSprite(args: {
+  hasCompanion: boolean;
+  muted: boolean;
+}): boolean {
+  return args.hasCompanion && !args.muted;
+}
+
+export function calculateCompanionReservedColumns(args: {
+  terminalColumns: number;
+  speaking: boolean;
+  companionName: string;
+  fullscreen: boolean;
+}): number {
+  if (args.terminalColumns < MIN_COLS_FOR_FULL_SPRITE) return 0;
+  const nameWidth = stringWidth(args.companionName);
+  const bubble = args.speaking && !args.fullscreen ? BUBBLE_WIDTH : 0;
+  return spriteColWidth(nameWidth) + SPRITE_PADDING_X + bubble;
+}
+
+export function deriveCompanionSpriteAnimation(args: {
+  reaction: string | undefined;
+  petting: boolean;
+  petAge: number;
+  tick: number;
+  frameCount: number;
+}): {
+  heartFrame: string | null;
+  spriteFrame: number;
+  blink: boolean;
+} {
+  const heartFrame = args.petting
+    ? PET_HEARTS[args.petAge % PET_HEARTS.length]!
+    : null;
+  if (args.reaction || args.petting) {
+    return {
+      heartFrame,
+      spriteFrame: args.tick % args.frameCount,
+      blink: false,
+    };
+  }
+
+  const step = IDLE_SEQUENCE[args.tick % IDLE_SEQUENCE.length]!;
+  if (step === -1) {
+    return {
+      heartFrame,
+      spriteFrame: 0,
+      blink: true,
+    };
+  }
+
+  return {
+    heartFrame,
+    spriteFrame: step % args.frameCount,
+    blink: false,
+  };
+}
+
 // Width the sprite area consumes. PromptInput subtracts this so text wraps
 // correctly. In fullscreen the bubble floats over scrollback (no extra
 // width); in non-fullscreen it sits inline and needs BUBBLE_WIDTH more.
@@ -116,11 +173,126 @@ function spriteColWidth(nameWidth: number): number {
 export function companionReservedColumns(terminalColumns: number, speaking: boolean): number {
   if (!feature('BUDDY')) return 0;
   const companion = getCompanion();
-  if (!companion || getGlobalConfig().companionMuted) return 0;
-  if (terminalColumns < MIN_COLS_FOR_FULL_SPRITE) return 0;
-  const nameWidth = stringWidth(companion.name);
-  const bubble = speaking && !isFullscreenActive() ? BUBBLE_WIDTH : 0;
-  return spriteColWidth(nameWidth) + SPRITE_PADDING_X + bubble;
+  if (
+    !canRenderCompanionSprite({
+      hasCompanion: Boolean(companion),
+      muted: getGlobalConfig().companionMuted,
+    })
+  ) {
+    return 0;
+  }
+  return calculateCompanionReservedColumns({
+    terminalColumns,
+    speaking,
+    companionName: companion.name,
+    fullscreen: isFullscreenActive(),
+  });
+}
+type CompanionSpriteContentProps = {
+  companion: NonNullable<ReturnType<typeof getCompanion>>;
+  reaction: string | undefined;
+  focused: boolean;
+  columns: number;
+  petting: boolean;
+  petAge: number;
+  fading: boolean;
+  tick: number;
+  fullscreen: boolean;
+};
+
+type CompanionSpriteViewProps = CompanionSpriteContentProps & {
+  muted: boolean;
+};
+
+export function CompanionSpriteView({
+  companion,
+  muted,
+  ...contentProps
+}: CompanionSpriteViewProps): React.ReactNode {
+  if (
+    !canRenderCompanionSprite({
+      hasCompanion: Boolean(companion),
+      muted,
+    })
+  ) {
+    return null;
+  }
+
+  return <CompanionSpriteContent companion={companion} {...contentProps} />;
+}
+
+export function CompanionSpriteContent({
+  companion,
+  reaction,
+  focused,
+  columns,
+  petting,
+  petAge,
+  fading,
+  tick,
+  fullscreen,
+}: CompanionSpriteContentProps) {
+  const color = RARITY_COLORS[companion.rarity];
+  const colWidth = spriteColWidth(stringWidth(companion.name));
+
+  if (columns < MIN_COLS_FOR_FULL_SPRITE) {
+    const quip =
+      reaction && reaction.length > NARROW_QUIP_CAP ? reaction.slice(0, NARROW_QUIP_CAP - 1) + '…' : reaction;
+    const label = quip ? `"${quip}"` : focused ? ` ${companion.name} ` : companion.name;
+    return (
+      <Box paddingX={1} alignSelf="flex-end">
+        <Text>
+          {petting && <Text color="autoAccept">{figures.heart} </Text>}
+          <Text bold color={color}>
+            {renderFace(companion)}
+          </Text>{' '}
+          <Text
+            italic
+            dimColor={!focused && !reaction}
+            bold={focused}
+            inverse={focused && !reaction}
+            color={reaction ? (fading ? 'inactive' : color) : focused ? color : undefined}
+          >
+            {label}
+          </Text>
+        </Text>
+      </Box>
+    );
+  }
+  const frameCount = spriteFrameCount(companion.species);
+  const { heartFrame, spriteFrame, blink } = deriveCompanionSpriteAnimation({
+    reaction,
+    petting,
+    petAge,
+    tick,
+    frameCount,
+  });
+  const body = renderSprite(companion, spriteFrame).map(line => (blink ? line.replaceAll(companion.eye, '-') : line));
+  const sprite = heartFrame ? [heartFrame, ...body] : body;
+  const spriteColumn = (
+    <Box flexDirection="column" flexShrink={0} alignItems="center" width={colWidth}>
+      {sprite.map((line, i) => (
+        <Text key={i} color={i === 0 && heartFrame ? 'autoAccept' : color}>
+          {line}
+        </Text>
+      ))}
+      <Text italic bold={focused} dimColor={!focused} color={focused ? color : undefined} inverse={focused}>
+        {focused ? ` ${companion.name} ` : companion.name}
+      </Text>
+    </Box>
+  );
+  if (!reaction) {
+    return <Box paddingX={1}>{spriteColumn}</Box>;
+  }
+  if (fullscreen) {
+    return <Box paddingX={1}>{spriteColumn}</Box>;
+  }
+  return (
+    <Box flexDirection="row" alignItems="flex-end" paddingX={1} flexShrink={0}>
+      <SpeechBubble text={reaction} color={color} fading={fading} tail="right" />
+      {spriteColumn}
+    </Box>
+  );
 }
 export function CompanionSprite(): React.ReactNode {
   const reaction = useAppState(s => s.companionReaction);
@@ -167,9 +339,15 @@ export function CompanionSprite(): React.ReactNode {
   }, [reaction, setAppState]);
   if (!feature('BUDDY')) return null;
   const companion = getCompanion();
-  if (!companion || getGlobalConfig().companionMuted) return null;
-  const color = RARITY_COLORS[companion.rarity];
-  const colWidth = spriteColWidth(stringWidth(companion.name));
+  if (
+    !canRenderCompanionSprite({
+      hasCompanion: Boolean(companion),
+      muted: getGlobalConfig().companionMuted,
+    })
+  ) {
+    return null;
+  }
+  const fullscreen = isFullscreenActive();
   const bubbleAge = reaction ? tick - lastSpokeTick.current : 0;
   const fading =
     reaction !== undefined &&
@@ -177,86 +355,19 @@ export function CompanionSprite(): React.ReactNode {
       FLOATING_BUBBLE_SHOW_TICKS - FLOATING_BUBBLE_FADE_WINDOW_TICKS;
   const petAge = petAt ? tick - petStartTick : Infinity;
   const petting = petAge * TICK_MS < PET_BURST_MS;
-
-  // Narrow terminals: collapse to one-line face. When speaking, the quip
-  // replaces the name beside the face (no room for a bubble).
-  if (columns < MIN_COLS_FOR_FULL_SPRITE) {
-    const quip =
-      reaction && reaction.length > NARROW_QUIP_CAP ? reaction.slice(0, NARROW_QUIP_CAP - 1) + '…' : reaction;
-    const label = quip ? `"${quip}"` : focused ? ` ${companion.name} ` : companion.name;
-    return (
-      <Box paddingX={1} alignSelf="flex-end">
-        <Text>
-          {petting && <Text color="autoAccept">{figures.heart} </Text>}
-          <Text bold color={color}>
-            {renderFace(companion)}
-          </Text>{' '}
-          <Text
-            italic
-            dimColor={!focused && !reaction}
-            bold={focused}
-            inverse={focused && !reaction}
-            color={reaction ? (fading ? 'inactive' : color) : focused ? color : undefined}
-          >
-            {label}
-          </Text>
-        </Text>
-      </Box>
-    );
-  }
-  const frameCount = spriteFrameCount(companion.species);
-  const heartFrame = petting ? PET_HEARTS[petAge % PET_HEARTS.length] : null;
-  let spriteFrame: number;
-  let blink = false;
-  if (reaction || petting) {
-    // Excited: cycle all fidget frames fast
-    spriteFrame = tick % frameCount;
-  } else {
-    const step = IDLE_SEQUENCE[tick % IDLE_SEQUENCE.length]!;
-    if (step === -1) {
-      spriteFrame = 0;
-      blink = true;
-    } else {
-      spriteFrame = step % frameCount;
-    }
-  }
-  const body = renderSprite(companion, spriteFrame).map(line => (blink ? line.replaceAll(companion.eye, '-') : line));
-  const sprite = heartFrame ? [heartFrame, ...body] : body;
-
-  // Name row doubles as hint row — unfocused shows dim name + ↓ discovery,
-  // focused shows inverse name. The enter-to-open hint lives in
-  // PromptInputFooter's right column so this row stays one line and the
-  // sprite doesn't jump up when selected. flexShrink=0 stops the
-  // inline-bubble row wrapper from squeezing the sprite to fit.
-  const spriteColumn = (
-    <Box flexDirection="column" flexShrink={0} alignItems="center" width={colWidth}>
-      {sprite.map((line, i) => (
-        <Text key={i} color={i === 0 && heartFrame ? 'autoAccept' : color}>
-          {line}
-        </Text>
-      ))}
-      <Text italic bold={focused} dimColor={!focused} color={focused ? color : undefined} inverse={focused}>
-        {focused ? ` ${companion.name} ` : companion.name}
-      </Text>
-    </Box>
-  );
-  if (!reaction) {
-    return <Box paddingX={1}>{spriteColumn}</Box>;
-  }
-
-  // Fullscreen: bubble renders separately via CompanionFloatingBubble in
-  // FullscreenLayout's bottomFloat slot (the bottom slot's overflowY:hidden
-  // would clip a position:absolute overlay here). Sprite body only.
-  // Non-fullscreen: bubble sits inline beside the sprite (input shrinks)
-  // because floating into Static scrollback can't be cleared.
-  if (isFullscreenActive()) {
-    return <Box paddingX={1}>{spriteColumn}</Box>;
-  }
   return (
-    <Box flexDirection="row" alignItems="flex-end" paddingX={1} flexShrink={0}>
-      <SpeechBubble text={reaction} color={color} fading={fading} tail="right" />
-      {spriteColumn}
-    </Box>
+    <CompanionSpriteView
+      companion={companion}
+      muted={getGlobalConfig().companionMuted}
+      reaction={reaction}
+      focused={focused}
+      columns={columns}
+      petting={petting}
+      petAge={petAge}
+      fading={fading}
+      tick={tick}
+      fullscreen={fullscreen}
+    />
   );
 }
 
